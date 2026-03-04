@@ -2017,14 +2017,40 @@ MonoBehaviour:
   diceDropSfxVolume: 1
   diceDropSfxPitchRange: {x: 0.95, y: 1.05}
   bottomDropSfx: {fileID: 8300000, guid: 635c90a152f10bd4bb5f001800f8a15f, type: 3}
+  fullEnergyExplosionSfx: {fileID: 8300000, guid: 1167f9d6a62a99c4c970145e9630f077, type: 3}
+  fullEnergyExplosionVolume: 0.37
+  fullEnergyExplosionAffectByTimeScale: 1
+  fullEnergyExplosionMinPitch: 0.05
+  fullEnergyExplosionMaxPitch: 1.2
+  slowMoEndWhooshSfx: {fileID: 0}
+  slowMoEndWhooshVolume: 1
+  diceFaceChangeSfx: {fileID: 8300000, guid: f792af6840b704d4399c7d9cf1aff92c, type: 3}
+  diceFaceChangeVolume: 1
+  diceFaceChangePitchRange: {x: 0.95, y: 1.05}
+  diceFaceChangeAffectBySlowMo: 1
+  slowMoEndImpactSfx: {fileID: 8300000, guid: 5b5c49e451c733e4cb87d62006d3f1a1, type: 3}
+  slowMoEndImpactVolume: 1
+  slowMoEndImpactCount: 5
+  slowMoEndImpactInterval: 0.06
   shakeLoopSfx: {fileID: 8300000, guid: 10ee0110778f4a24cb5e559b47204e17, type: 3}
   shakeMinVolume: 0.05
-  shakeMaxVolume: 1
+  shakeMaxVolume: 0.538
   shakeMinPitch: 0.9
-  shakeMaxPitch: 1.35
+  shakeMaxPitch: 1
   shakeVolumeLerp: 12
   shakePitchLerp: 12
   shakeOnlyWhenEnergyBarVisible: 1
+  energyShakeEnabled: 1
+  energyShakePosMin: 0
+  energyShakePosMax: 0.005
+  energyShakeRotMin: 0
+  energyShakeRotMax: 0.0005
+  energyShakeFrequency: 18
+  impactBurstShakeEnabled: 1
+  impactShakePos: 15
+  impactShakeRot: 10
+  impactShakeFrequency: 28
+  impactShakePerHitDuration: 0.5
   fullEnergyBurstPrefab: {fileID: 992277838493781689, guid: 4b3954849eb9c7043a586326f908377d, type: 3}
   fullEnergyBurstCount: 150
   fullEnergyBurstDestroyExtra: 0.5
@@ -2090,8 +2116,8 @@ MonoBehaviour:
   fullEnergyDelay: 1
   camSnapBackDuration: 0.12
   camSnapBackSmoothness: 1.6
-  camShakeDuration: 0.25
-  camShakePosAmp: 0.08
+  camShakeDuration: 1
+  camShakePosAmp: 2
   camShakeRotAmpDeg: 3.5
   camShakeFrequency: 28
   cam: {fileID: 1274820014}

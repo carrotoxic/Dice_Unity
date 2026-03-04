@@ -19,6 +19,37 @@ public class StartUIController : MonoBehaviour
     [Tooltip("Bottom 落下/落地时的音效（与骰子 drop 音效分开）")]
     [SerializeField] private AudioClip bottomDropSfx;
 
+
+    [Header("SFX - Full Energy Explosion (Energy == 100)")]
+    [SerializeField] private AudioClip fullEnergyExplosionSfx;
+    [Range(0f, 1f)][SerializeField] private float fullEnergyExplosionVolume = 1f;
+
+    [Tooltip("If enabled, explosion pitch will follow Time.timeScale (slow motion makes it deeper/slower).")]
+    [SerializeField] private bool fullEnergyExplosionAffectByTimeScale = true;
+    [SerializeField] private float fullEnergyExplosionMinPitch = 0.1f;
+    [SerializeField] private float fullEnergyExplosionMaxPitch = 1.2f;
+
+    [Header("SFX - SlowMo End Whoosh (When SlowMo Ends)")]
+    [SerializeField] private AudioClip slowMoEndWhooshSfx;
+    [Range(0f, 1f)][SerializeField] private float slowMoEndWhooshVolume = 1f;
+
+
+    [Header("SFX - SlowMo End Impact (After Whoosh)")]
+
+    [Header("SFX - Dice Face Change (SlowMo Click)")]
+    [Tooltip("慢镜头期间点击骰子改变点数时播放的音效")]
+    [SerializeField] private AudioClip diceFaceChangeSfx;
+    [Range(0f, 1f)][SerializeField] private float diceFaceChangeVolume = 1f;
+    [Tooltip("每次点击时的随机 pitch 范围")]
+    [SerializeField] private Vector2 diceFaceChangePitchRange = new Vector2(0.95f, 1.05f);
+    [Tooltip("如果勾选，则在慢镜头期间会把 pitch 乘以慢速倍率（更“慢/沉”）")]
+    [SerializeField] private bool diceFaceChangeAffectBySlowMo = true;
+
+    [SerializeField] private AudioClip slowMoEndImpactSfx;
+    [Range(0f, 1f)][SerializeField] private float slowMoEndImpactVolume = 1f;
+    [Min(1)][SerializeField] private int slowMoEndImpactCount = 5;
+    [Tooltip("每次撞击之间的间隔（小于音效长度时会重叠）")]
+    [Min(0f)][SerializeField] private float slowMoEndImpactInterval = 0.06f;
     [Header("SFX - Shake Loop (Energy Bar Stage)")]
     [SerializeField] private AudioClip shakeLoopSfx;
     [Tooltip("能量=0 时的音量")]
@@ -35,6 +66,32 @@ public class StartUIController : MonoBehaviour
     [SerializeField] private float shakePitchLerp = 12f;
     [Tooltip("只在能量条可见时播放（否则：能量>0 也会播放）")]
     [SerializeField] private bool shakeOnlyWhenEnergyBarVisible = true;
+
+
+    // =========================
+    // Camera Shake
+    // =========================
+    [Header("Camera Shake - Energy Charge")]
+    [SerializeField] private bool energyShakeEnabled = true;
+    [Tooltip("Energy=0 的抖动强度（位置）")]
+    [SerializeField] private float energyShakePosMin = 0.0f;
+    [Tooltip("Energy=100 的抖动强度（位置）")]
+    [SerializeField] private float energyShakePosMax = 0.035f;
+    [Tooltip("Energy=0 的抖动强度（旋转，度）")]
+    [SerializeField] private float energyShakeRotMin = 0.0f;
+    [Tooltip("Energy=100 的抖动强度（旋转，度）")]
+    [SerializeField] private float energyShakeRotMax = 0.6f;
+    [Tooltip("抖动频率（越大越抖得快）")]
+    [SerializeField] private float energyShakeFrequency = 18f;
+
+    [Header("Camera Shake - AfterWhoosh Impact Burst")]
+    [SerializeField] private bool impactBurstShakeEnabled = true;
+    [SerializeField] private float impactShakePos = 0.12f;
+    [SerializeField] private float impactShakeRot = 2.2f;
+    [SerializeField] private float impactShakeFrequency = 28f;
+    [Tooltip("每次撞击触发的抖动持续时间（可重叠叠加）")]
+    [SerializeField] private float impactShakePerHitDuration = 0.18f;
+
 
     // =========================
     // Full Energy Burst FX
@@ -310,6 +367,97 @@ public class StartUIController : MonoBehaviour
     private float shakeLoopPitch = 1f;
 
 
+    // Camera shake runtime
+    private float shakeTime = 0f;
+    private float shakeBurstTimer = 0f;
+
+    // 用于 PerlinNoise 的随机种子（保证不同轴不一样）
+    private float shakeSeedA;
+    private float shakeSeedB;
+    private float shakeSeedC;
+    private float shakeSeedD;
+
+    private void InitShakeSeedsIfNeeded()
+    {
+        if (shakeSeedA != 0f) return;
+        shakeSeedA = Random.Range(0.1f, 999.9f);
+        shakeSeedB = Random.Range(0.1f, 999.9f);
+        shakeSeedC = Random.Range(0.1f, 999.9f);
+        shakeSeedD = Random.Range(0.1f, 999.9f);
+    }
+
+    // 触发一次“撞击爆发”抖动（可重叠：timer 取 max）
+    private void StartShakeBurst(float duration)
+    {
+        if (!impactBurstShakeEnabled) return;
+        shakeBurstTimer = Mathf.Max(shakeBurstTimer, Mathf.Max(0f, duration));
+    }
+
+    // 在相机驱动/对齐完成后调用，把抖动叠加到当前 cam 位置/旋转上
+    private void ApplyCameraShakeLate()
+    {
+        if (cam == null) return;
+
+        InitShakeSeedsIfNeeded();
+
+        Vector3 posOff = Vector3.zero;
+        Vector3 rotOffEuler = Vector3.zero;
+
+        // =========================
+        // Energy 充能阶段轻微抖动（随 energy 增强）
+        // =========================
+        if (energyShakeEnabled
+            && energyLogicEnabled
+            && !energyLocked
+            && !fullEnergySequenceStarted
+            && (energyBarVisible || !shakeOnlyWhenEnergyBarVisible))
+        {
+            float n = Mathf.Clamp01(energy / 100f);
+            float posAmp = Mathf.Lerp(energyShakePosMin, energyShakePosMax, n);
+            float rotAmp = Mathf.Lerp(energyShakeRotMin, energyShakeRotMax, n);
+
+            float t = Time.unscaledTime * Mathf.Max(0.01f, energyShakeFrequency);
+            float nx = (Mathf.PerlinNoise(shakeSeedA, t) - 0.5f) * 2f;
+            float ny = (Mathf.PerlinNoise(shakeSeedB, t) - 0.5f) * 2f;
+            float nz = (Mathf.PerlinNoise(shakeSeedC, t) - 0.5f) * 2f;
+
+            posOff += new Vector3(nx, ny, nz) * posAmp;
+
+            float rx = (Mathf.PerlinNoise(shakeSeedB, t + 10.1f) - 0.5f) * 2f;
+            float ry = (Mathf.PerlinNoise(shakeSeedC, t + 20.2f) - 0.5f) * 2f;
+            float rz = (Mathf.PerlinNoise(shakeSeedD, t + 30.3f) - 0.5f) * 2f;
+            rotOffEuler += new Vector3(rx, ry, rz) * rotAmp;
+        }
+
+        // =========================
+        // AfterWhoosh 撞击阶段强烈抖动（burst，可重叠）
+        // =========================
+        if (impactBurstShakeEnabled && shakeBurstTimer > 0f)
+        {
+            float n = Mathf.Clamp01(shakeBurstTimer / Mathf.Max(0.0001f, impactShakePerHitDuration));
+            float posAmp = impactShakePos * n;
+            float rotAmp = impactShakeRot * n;
+
+            float t = Time.unscaledTime * Mathf.Max(0.01f, impactShakeFrequency);
+            float nx = (Mathf.PerlinNoise(shakeSeedC, t + 100.1f) - 0.5f) * 2f;
+            float ny = (Mathf.PerlinNoise(shakeSeedD, t + 200.2f) - 0.5f) * 2f;
+            float nz = (Mathf.PerlinNoise(shakeSeedA, t + 300.3f) - 0.5f) * 2f;
+            posOff += new Vector3(nx, ny, nz) * posAmp;
+
+            float rx = (Mathf.PerlinNoise(shakeSeedD, t + 400.4f) - 0.5f) * 2f;
+            float ry = (Mathf.PerlinNoise(shakeSeedA, t + 500.5f) - 0.5f) * 2f;
+            float rz = (Mathf.PerlinNoise(shakeSeedB, t + 600.6f) - 0.5f) * 2f;
+            rotOffEuler += new Vector3(rx, ry, rz) * rotAmp;
+        }
+
+        // 叠加到当前相机（下一帧会被驱动逻辑重新写回，因此这里不需要“复位”）
+        cam.position += posOff;
+        if (rotOffEuler != Vector3.zero)
+            cam.rotation = Quaternion.Euler(rotOffEuler) * cam.rotation;
+    }
+
+
+
     // Group + Camera drive
     private Transform cupBottomGroupTr;
     private Vector3 groupBasePos;
@@ -398,6 +546,9 @@ public class StartUIController : MonoBehaviour
                 energyLocked = true;
                 fullEnergySequenceStarted = true;
 
+                // ✅ Energy 到达 100：播放爆炸音效（只触发一次）
+                if (cam != null) PlayFullEnergyExplosionSfx(cam.position);
+
                 FadeOutEnergyBarWhole();
                 StartCoroutine(FullEnergySequence());
                 StopShakeLoopImmediate();
@@ -446,6 +597,12 @@ public class StartUIController : MonoBehaviour
                 cam.rotation = Quaternion.Slerp(cam.rotation, desiredRot, 1f - Mathf.Exp(-cameraDriveLerp * Time.deltaTime));
             }
         }
+
+        // Camera shake timers
+        if (shakeBurstTimer > 0f)
+            shakeBurstTimer = Mathf.Max(0f, shakeBurstTimer - Time.unscaledDeltaTime);
+
+        ApplyCameraShakeLate();
     }
 
 
@@ -595,6 +752,116 @@ public class StartUIController : MonoBehaviour
     }
 
 
+    private void PlayDiceFaceChangeSfx(Vector3 worldPos)
+    {
+        if (diceFaceChangeSfx == null) return;
+
+        float pitch = Random.Range(diceFaceChangePitchRange.x, diceFaceChangePitchRange.y);
+
+        if (diceFaceChangeAffectBySlowMo)
+        {
+            // 在慢镜头期间，音效也跟着“变慢/变沉”
+            float scale = slowMoTriggered ? (useGlobalSlowMo ? Time.timeScale : slowMoSpeedMultiplier) : 1f;
+            scale = Mathf.Clamp01(scale);
+            if (scale <= 0.0001f) scale = 0.0001f;
+            pitch *= scale;
+        }
+
+        PlayOneShot2DWithPitch(diceFaceChangeSfx, diceFaceChangeVolume, pitch, worldPos, "DiceFaceChangeSFX");
+    }
+
+    private void PlayOneShot2D(AudioClip clip, float volume, Vector3 worldPos, string name)
+    {
+        if (clip == null) return;
+        GameObject go = new GameObject(name);
+        go.transform.position = worldPos;
+        var src = go.AddComponent<AudioSource>();
+        src.clip = clip;
+        src.volume = volume;
+        src.pitch = 1f;
+        src.spatialBlend = 0f;
+        src.Play();
+        Destroy(go, clip.length + 0.2f);
+    }
+
+    private void PlayOneShot2DWithPitch(AudioClip clip, float volume, float pitch, Vector3 worldPos, string name)
+    {
+        if (clip == null) return;
+        GameObject go = new GameObject(name);
+        go.transform.position = worldPos;
+        var src = go.AddComponent<AudioSource>();
+        src.clip = clip;
+        src.volume = volume;
+        src.pitch = pitch;
+        src.spatialBlend = 0f;
+        src.Play();
+        // Destroy time must be real-time, not scaled time; Destroy() is timeScale independent.
+        Destroy(go, clip.length / Mathf.Max(0.01f, pitch) + 0.2f);
+    }
+
+
+    private void PlayFullEnergyExplosionSfx(Vector3 worldPos)
+    {
+        float pitch = 1f;
+        if (fullEnergyExplosionAffectByTimeScale)
+        {
+            // Audio does not automatically slow with Time.timeScale, so we emulate it via pitch.
+            // IMPORTANT: In this project's flow, the full-energy explosion often plays BEFORE slow-mo
+            // is actually enabled, so Time.timeScale can still be 1.0. In that case we use the *planned*
+            // slow-mo multiplier so the explosion also feels slowed.
+
+            float plannedOrCurrentScale;
+
+            // If slow-mo is already active, follow the actual timeScale.
+            if (slowMoTriggered)
+            {
+                plannedOrCurrentScale = Time.timeScale;
+            }
+            else
+            {
+                // Otherwise, follow the slow-mo speed multiplier that will be applied shortly.
+                plannedOrCurrentScale = Mathf.Clamp01(slowMoSpeedMultiplier);
+                if (plannedOrCurrentScale <= 0.0001f) plannedOrCurrentScale = 0.0001f;
+            }
+
+            pitch = Mathf.Clamp(plannedOrCurrentScale, fullEnergyExplosionMinPitch, fullEnergyExplosionMaxPitch);
+        }
+        PlayOneShot2DWithPitch(fullEnergyExplosionSfx, fullEnergyExplosionVolume, pitch, worldPos, "FullEnergyExplosionSFX");
+    }
+
+    private void PlaySlowMoEndWhooshSfx(Vector3 worldPos)
+    {
+        PlayOneShot2D(slowMoEndWhooshSfx, slowMoEndWhooshVolume, worldPos, "SlowMoEndWhooshSFX");
+    }
+
+    private void PlaySlowMoEndImpactSfx(Vector3 worldPos, int index)
+    {
+        // index 仅用于命名，方便在 Hierarchy 里调试查看（对象会自动销毁）
+        PlayOneShot2D(slowMoEndImpactSfx, slowMoEndImpactVolume, worldPos, $"SlowMoEndImpactSFX_{index}");
+    }
+
+    private IEnumerator Co_PlayWhooshThenImpacts(Vector3 worldPos)
+    {
+        // 先播掠过音效
+        if (slowMoEndWhooshSfx != null)
+        {
+            PlaySlowMoEndWhooshSfx(worldPos);
+            yield return new WaitForSeconds(slowMoEndWhooshSfx.length);
+        }
+
+        // 再连播 5 次（可重叠）
+        int count = Mathf.Max(1, slowMoEndImpactCount);
+        float interval = Mathf.Max(0f, slowMoEndImpactInterval);
+
+        // ✅ 撞击阶段：触发强烈屏幕抖动（可重叠）
+        StartShakeBurst(impactShakePerHitDuration);
+        for (int i = 0; i < count; i++)
+        {
+            PlaySlowMoEndImpactSfx(worldPos, i);
+            StartShakeBurst(impactShakePerHitDuration);
+            if (interval > 0f) yield return new WaitForSeconds(interval);
+        }
+    }
     // =========================
     // Full Energy Sequence
     // =========================
@@ -1077,15 +1344,23 @@ public class StartUIController : MonoBehaviour
         clicked.faceFrom = currentFace;
         clicked.faceTo = GetFaceOffsetToForward(newValue);
         clicked.faceT = 0f;
+
+        // ✅ 点击换点数音效
+        PlayDiceFaceChangeSfx(clicked.tr.position);
     }
 
 
     private void EndSlowMo(bool forceRestoreTimeScale)
     {
+        bool wasSlowMo = slowMoTriggered;
+
         if (!slowMoTriggered && !forceRestoreTimeScale) return;
 
         slowMoTriggered = false;
         slowMoArmed = false;
+
+        // ✅ 慢镜头结束：播放掠过/呼啸音效（只在从慢镜头状态退出时）
+        if (wasSlowMo && cam != null) StartCoroutine(Co_PlayWhooshThenImpacts(cam.position));
 
         FadeOutSlowEnergyBarWhole();
 
