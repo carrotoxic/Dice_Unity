@@ -12,14 +12,17 @@ public class DieController : MonoBehaviour
     public Vector3 face6TopEuler;
 
     [Header("Runtime")]
-    public int currentValue = 1;
+    [SerializeField] private int currentValue = 1;
+
+    public int CurrentValue => currentValue;
 
     private Coroutine rotateCo;
 
-    public void RandomizeFaceSmooth(float duration = 0.18f)
+    public int RandomizeFaceSmooth(float duration = 0.18f)
     {
         int v = Random.Range(1, 7);
         SetFaceSmooth(v, duration);
+        return v;
     }
 
     public void SetFaceSmooth(int value, float duration = 0.18f)

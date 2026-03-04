@@ -7,24 +7,10 @@ using UnityEngine.UI;
 public class StartUIController : MonoBehaviour
 {
     // =========================
-    // Bullet Time Fill Light (AUTO SPAWN POINT, near camera)
-    // =========================
-    [Header("Bullet Time Fill Light (Auto Spawn Point, near camera)")]
-    [SerializeField] private bool autoSpawnDiceFillLight = true;
-    [SerializeField] private Color fillLightColor = new Color(1f, 0.92f, 0.82f, 1f);
-    [SerializeField] private float fillLightRange = 2.2f;
-    [SerializeField] private float fillLightIntensity = 1.6f;
-    [SerializeField] private float fillLightForwardToCamera = 0.25f; // 往镜头方向推多远
-    [SerializeField] private float fillLightUp = 0.25f;              // 稍微抬高
-    [SerializeField] private bool fillLightShadows = false;
-
-    private Light runtimeDiceFillLight;
-
-    // =========================
     // Full Energy Burst FX
     // =========================
     [Header("Full Energy Burst FX")]
-    [SerializeField] private GameObject fullEnergyBurstPrefab;   // FX_Smoke_13.prefab
+    [SerializeField] private GameObject fullEnergyBurstPrefab;
     [SerializeField] private int fullEnergyBurstCount = 150;
     [SerializeField] private float fullEnergyBurstDestroyExtra = 0.5f;
 
@@ -40,29 +26,69 @@ public class StartUIController : MonoBehaviour
     [SerializeField] private bool destroyGroupAfterBreak = true;
 
     // =========================
-    // Dice Fly To Camera + Bullet Time + Click Randomize
+    // Post Launch Dice (spawn -> fly through camera)
     // =========================
-    [Header("Dice Fly To Camera + Bullet Time")]
-    [SerializeField] private float diceFlyDuration = 0.55f;
-    [SerializeField] private float diceHoldDistance = 0.55f;
-    [SerializeField] private float diceSpreadX = 0.22f;
-    [SerializeField] private float diceSpreadY = 0.10f;
-    [SerializeField] private float diceApproachSpin = 720f;
-    [SerializeField] private float diceCollisionOffSeconds = 0.20f;
+    [Header("Post Launch Dice (Spawn at Camera+Forward*30 -> Fly Through Camera)")]
+    [SerializeField] private bool spawnDiceAfterLaunch = true;
+    [SerializeField] private float postDiceSpawnForwardDistance = 30f;     // camera 前 30
+    [SerializeField] private float postDiceApproachDistance = 0.6f;        // 飞到镜头前多近（越小越贴脸）
+    [SerializeField] private float postDiceOvershootBehindCameraDistance = 6f; // 穿过镜头后飞到镜头后多远
+    [SerializeField] private float postDiceFlyDuration = 0.28f;            // 总时长（越小越快）
+    [SerializeField] private float postDiceRollMinDegPerSec = 600f;
+    [SerializeField] private float postDiceRollMaxDegPerSec = 1400f;
+    [SerializeField] private float postDiceDestroyAfterArrive = 0f;        // 0=不销毁；>0 到达后几秒销毁
 
-    [Header("Bullet Time")]
-    [SerializeField] private bool enableBulletTime = true;
-    [SerializeField] private float bulletTimeScale = 0.08f;
-    [SerializeField] private float bulletTimeFixedDelta = 0.002f;
+    // ✅ 更随机、更分散的生成参数
+    [Header("Post Dice Spawn Randomness (Spread + Separation)")]
+    [SerializeField] private float postSpawnRadius = 1.4f;          // 生成圆半径（越大越分散）
+    [SerializeField] private float postMinSeparation = 0.55f;       // 最小间距（越大越不挤）
+    [SerializeField] private float postDepthJitter = 0.8f;          // 沿 forward 前后抖动（更3D）
+    [SerializeField] private int postSampleAttemptsPerDie = 24;     // 拒绝采样次数
 
-    [Header("Bullet Time Dice Motion")]
-    [SerializeField] private float bulletDiceDriftSpeed = 0.1f;   // 子弹时间里漂移速度
-    [SerializeField] private float bulletDiceMaxDrift = 0.35f;     // 最大漂移距离（防穿镜头）
-    [SerializeField] private bool bulletDiceDriftTowardCamera = true;
+    // =========================
+    // Post Dice Fill Light (Point Light follow dice center)
+    // =========================
+    [Header("Post Dice Fill Light (Follow Dice)")]
+    [SerializeField] private bool enablePostDiceFillLight = true;
+    [SerializeField] private Color postDiceLightColor = new Color(1f, 0.95f, 0.85f, 1f);
+    [SerializeField] private float postDiceLightRange = 6f;
+    [SerializeField] private float postDiceLightIntensity = 0.7f;
+    [SerializeField] private float postDiceLightForwardToCamera = 0.8f; // 从骰子中心往相机方向推
+    [SerializeField] private float postDiceLightUpOffset = 0.2f;        // 稍微抬高一点
+    [SerializeField] private bool postDiceLightShadows = false;
 
-    [Header("Dice Click Randomize (Smooth)")]
-    [SerializeField] private LayerMask diceRaycastMask = ~0;
-    [SerializeField] private float diceRotateDuration = 0.18f; // ✅ 点击后平滑换面的时长
+    private Light postDiceFillLight;
+
+    // =========================
+    // Slow-Mo Trigger + SlowEnergy
+    // =========================
+    [Header("Slow-Mo Trigger (Distance <= 20)")]
+    [SerializeField] private float slowMoTriggerDistance = 20f;
+
+    [Tooltip("慢镜头时骰子飞行速度倍率（越小越慢）")]
+    [SerializeField] private float slowMoSpeedMultiplier = 0.25f;
+
+    [Tooltip("是否使用全局 timeScale 慢镜头（开启后整个世界都会慢）")]
+    [SerializeField] private bool useGlobalSlowMo = false;
+
+    [Tooltip("全局慢镜头 timeScale（仅 useGlobalSlowMo=true 时生效）")]
+    [SerializeField] private float globalSlowMoTimeScale = 0.2f;
+
+    [Tooltip("slowMo 触发时 fixedDeltaTime 跟随缩放（仅全局慢镜头）")]
+    [SerializeField] private bool scaleFixedDeltaTimeWithTimeScale = true;
+
+    [Header("Slow Energy (100 -> 0)")]
+    [SerializeField] private float slowEnergyMax = 100f;
+    [SerializeField] private float slowEnergyDecayPerSecond = 25f;
+
+    // =========================
+    // Slow Energy Bar UI (Fade + Filled)
+    // =========================
+    [Header("Slow Energy Bar UI (Fade + Filled)")]
+    [SerializeField] private GameObject slowEnergyBarRoot;   // CUD/SlowEnergyBar
+    [SerializeField] private Image slowEnergyFillImage;      // CUD/SlowEnergyBar/bar(Image Filled)
+    [SerializeField] private float slowEnergyFadeInDuration = 0.35f;
+    [SerializeField] private float slowEnergyFadeOutDuration = 0.35f;
 
     // =========================
     // Energy Bar Color
@@ -111,7 +137,10 @@ public class StartUIController : MonoBehaviour
     [Header("Camera Full Energy Snap + Shake")]
     [SerializeField] private float fullEnergyThreshold = 100f;
     [SerializeField] private float fullEnergyDelay = 1.0f;
+
     [SerializeField] private float camSnapBackDuration = 0.12f;
+    [SerializeField] private float camSnapBackSmoothness = 1.6f;
+
     [SerializeField] private float camShakeDuration = 0.25f;
     [SerializeField] private float camShakePosAmp = 0.08f;
     [SerializeField] private float camShakeRotAmpDeg = 3.5f;
@@ -176,7 +205,6 @@ public class StartUIController : MonoBehaviour
     [SerializeField] private float groupTargetY = 0.95f;
     [SerializeField] private float groupMoveYDuration = 1.0f;
 
-    // 第一次镜头移动的目的地
     private readonly Vector3 targetPos = new Vector3(0.01f, 1.88f, 1.23f);
     private readonly Vector3 targetEuler = new Vector3(30.061f, 41.397f, 1.179f);
 
@@ -193,7 +221,33 @@ public class StartUIController : MonoBehaviour
 
     private readonly List<Rigidbody> spawnedDice = new List<Rigidbody>();
 
-    // Energy
+    // Post Dice runtime
+    private class PostDie
+    {
+        public Transform tr;
+        public int value;
+        public float rollSpeed;
+        public float rollAngle;
+        public Vector3 startPos;
+        public Vector2 planeOffset;
+        public float depthOffset;
+    }
+    private readonly List<PostDie> postDice = new List<PostDie>();
+    private Coroutine postDiceCo;
+
+    // SlowEnergy runtime
+    private float slowEnergy = 0f;
+    private bool slowMoTriggered = false;
+    private bool slowMoArmed = false;
+    private float defaultFixedDeltaTime;
+
+    // SlowEnergyBar fade runtime
+    private readonly List<Graphic> slowEnergyGraphics = new List<Graphic>();
+    private Coroutine slowEnergyFadeCo;
+    private float slowEnergyAlpha = 0f;
+    private bool slowEnergyBarVisible = false;
+
+    // Energy runtime
     private bool energyLogicEnabled = false;
     private float energy = 0f;
 
@@ -217,17 +271,12 @@ public class StartUIController : MonoBehaviour
     private bool fullEnergySequenceStarted = false;
     private bool cameraDriveEnabled = true;
 
-    // Bullet time
-    private bool inBulletTime = false;
-    private float defaultFixedDelta;
-    private Vector3 bulletDiceStartCenter;
-
-    private Camera camComp;
-
+    // =========================
+    // Unity lifecycle
+    // =========================
     private void Awake()
     {
-        defaultFixedDelta = Time.fixedDeltaTime;
-        camComp = (cam != null) ? cam.GetComponent<Camera>() : null;
+        defaultFixedDeltaTime = Time.fixedDeltaTime;
 
         if (pressStart != null) pressStart.SetActive(false);
 
@@ -235,13 +284,17 @@ public class StartUIController : MonoBehaviour
         HideEnergyBarImmediate();
         SetEnergyUI(0f);
 
-        DestroyDiceFillLight();
+        CacheSlowEnergyGraphics();
+        HideSlowEnergyBarImmediate();
+        SetSlowEnergyUI(0f);
+
+        DestroyPostDiceFillLight();
     }
 
     private void OnDisable()
     {
-        ExitBulletTime();
-        DestroyDiceFillLight();
+        EndSlowMo(forceRestoreTimeScale: true);
+        DestroyPostDiceFillLight();
     }
 
     private void Update()
@@ -254,14 +307,6 @@ public class StartUIController : MonoBehaviour
         }
 
         if (!energyLogicEnabled) return;
-
-        // ✅ 子弹时间：骰子继续漂移 + 点击平滑换面
-        if (inBulletTime)
-        {
-            UpdateBulletTimeDiceDrift();
-            HandleDiceClickSmooth();
-            return;
-        }
 
         if (!energyLocked)
         {
@@ -307,11 +352,12 @@ public class StartUIController : MonoBehaviour
 
     private void LateUpdate()
     {
-        UpdateDiceFillLightPosition();
+        UpdatePostDiceFaceToCamera();
+        UpdatePostDiceFillLight();     // ✅ light 跟随后置骰子中心
+        UpdateSlowEnergyTickAndUI();
 
         if (!energyLogicEnabled) return;
         if (!cameraDriveEnabled) return;
-        if (inBulletTime) return;
 
         float norm = Mathf.Clamp01(energy / 100f);
 
@@ -333,21 +379,13 @@ public class StartUIController : MonoBehaviour
         if (cam != null)
         {
             Vector3 desiredPos = Vector3.Lerp(cameraBasePos, targetPos, norm);
-            cam.position = Vector3.Lerp(
-                cam.position,
-                desiredPos,
-                1f - Mathf.Exp(-cameraDriveLerp * Time.deltaTime)
-            );
+            cam.position = Vector3.Lerp(cam.position, desiredPos, 1f - Mathf.Exp(-cameraDriveLerp * Time.deltaTime));
 
             if (driveCameraRotationToo)
             {
                 Quaternion targetRot = Quaternion.Euler(targetEuler);
                 Quaternion desiredRot = Quaternion.Slerp(cameraBaseRot, targetRot, norm);
-                cam.rotation = Quaternion.Slerp(
-                    cam.rotation,
-                    desiredRot,
-                    1f - Mathf.Exp(-cameraDriveLerp * Time.deltaTime)
-                );
+                cam.rotation = Quaternion.Slerp(cam.rotation, desiredRot, 1f - Mathf.Exp(-cameraDriveLerp * Time.deltaTime));
             }
         }
     }
@@ -361,7 +399,6 @@ public class StartUIController : MonoBehaviour
             yield return new WaitForSeconds(fullEnergyDelay);
 
         yield return StartCoroutine(CameraSnapBackShakeBurstAndBreak_KeepCameraStill());
-        yield return StartCoroutine(FlyDiceToCameraThenEnterBulletTime());
     }
 
     private IEnumerator CameraSnapBackShakeBurstAndBreak_KeepCameraStill()
@@ -376,25 +413,31 @@ public class StartUIController : MonoBehaviour
         SpawnFullEnergyBurstFX();
         BreakApartGroupAndLaunch();
 
+        // 快速平滑回位（无回弹）
         Vector3 fromPos = cam.position;
         Quaternion fromRot = cam.rotation;
 
-        float t = 0f;
         float dur = Mathf.Max(0.0001f, camSnapBackDuration);
+        float t = 0f;
+
         while (t < dur)
         {
             t += Time.deltaTime;
             float u = Mathf.Clamp01(t / dur);
-            float s = EaseOutBack(u);
 
-            cam.position = Vector3.LerpUnclamped(fromPos, basePos, s);
-            cam.rotation = Quaternion.SlerpUnclamped(fromRot, baseRot, s);
+            float s = u * u * (3f - 2f * u);
+            if (camSnapBackSmoothness != 1f)
+                s = Mathf.Pow(s, 1f / Mathf.Max(0.0001f, camSnapBackSmoothness));
+
+            cam.position = Vector3.Lerp(fromPos, basePos, s);
+            cam.rotation = Quaternion.Slerp(fromRot, baseRot, s);
             yield return null;
         }
 
         cam.position = basePos;
         cam.rotation = baseRot;
 
+        // Shake
         float shakeT = 0f;
         Vector3 shakeBasePos = cam.position;
         Quaternion shakeBaseRot = cam.rotation;
@@ -429,237 +472,6 @@ public class StartUIController : MonoBehaviour
         cam.rotation = shakeBaseRot;
     }
 
-    private IEnumerator FlyDiceToCameraThenEnterBulletTime()
-    {
-        if (cam == null) yield break;
-
-        List<Rigidbody> dice = new List<Rigidbody>();
-        for (int i = 0; i < spawnedDice.Count && dice.Count < 5; i++)
-            if (spawnedDice[i] != null) dice.Add(spawnedDice[i]);
-        if (dice.Count == 0) yield break;
-
-        Vector3 targetCenter = cam.position + cam.forward * diceHoldDistance;
-
-        for (int i = 0; i < dice.Count; i++)
-        {
-            Rigidbody rb = dice[i];
-            rb.isKinematic = true;
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-
-            if (diceCollisionOffSeconds > 0.001f)
-                StartCoroutine(DisableCollisionTemporarily(rb, diceCollisionOffSeconds));
-        }
-
-        Vector3[] startPos = new Vector3[dice.Count];
-        for (int i = 0; i < dice.Count; i++) startPos[i] = dice[i].position;
-
-        float t = 0f;
-        while (t < diceFlyDuration)
-        {
-            t += Time.deltaTime;
-            float u = Mathf.Clamp01(t / diceFlyDuration);
-            float s = u * u * (3f - 2f * u);
-
-            targetCenter = cam.position + cam.forward * diceHoldDistance;
-            Vector3 right = cam.right;
-            Vector3 up = cam.up;
-
-            for (int i = 0; i < dice.Count; i++)
-            {
-                float sx = (i - (dice.Count - 1) * 0.5f) * diceSpreadX;
-                float sy = ((i % 2 == 0) ? diceSpreadY : -diceSpreadY);
-                Vector3 targetPos = targetCenter + right * sx + up * sy;
-
-                Rigidbody rb = dice[i];
-                rb.position = Vector3.Lerp(startPos[i], targetPos, s);
-
-                Quaternion spin = Quaternion.Euler(
-                    (diceApproachSpin * u) * (i + 1) * Time.deltaTime,
-                    (diceApproachSpin * 0.7f * u) * Time.deltaTime,
-                    (diceApproachSpin * 0.5f * u) * Time.deltaTime
-                );
-                rb.rotation = spin * rb.rotation;
-            }
-
-            yield return null;
-        }
-
-        if (enableBulletTime)
-            EnterBulletTime();
-
-        inBulletTime = true;
-
-        // ✅ 记录进入子弹时间的中心（用于限制漂移距离）
-        bulletDiceStartCenter = GetDiceCenterWorld();
-
-        // ✅ 进入子弹时间瞬间：所有骰子顶面朝向镜头（保证你看得到顶面点数）
-        AlignAllDiceTopToCamera();
-
-        // ✅ 点光生成（骰子中心靠近 camera 一点）
-        EnsureDiceFillLight();
-        UpdateDiceFillLightPosition();
-    }
-
-    private void AlignAllDiceTopToCamera()
-    {
-        if (cam == null) return;
-
-        // 让顶面“朝向屏幕/相机”：up -> -cam.forward
-        Vector3 targetNormal = -cam.forward;
-
-        for (int i = 0; i < spawnedDice.Count; i++)
-        {
-            Rigidbody rb = spawnedDice[i];
-            if (rb == null) continue;
-
-            Quaternion delta = Quaternion.FromToRotation(rb.transform.up, targetNormal);
-            rb.rotation = delta * rb.rotation;
-            rb.angularVelocity = Vector3.zero;
-        }
-    }
-
-    private void UpdateBulletTimeDiceDrift()
-    {
-        if (cam == null) return;
-
-        Vector3 dir = bulletDiceDriftTowardCamera ? (-cam.forward) : (cam.forward);
-        float dt = Time.unscaledDeltaTime;
-
-        Vector3 centerNow = GetDiceCenterWorld();
-        float moved = Vector3.Dot(centerNow - bulletDiceStartCenter, dir);
-
-        if (moved >= bulletDiceMaxDrift) return;
-
-        Vector3 step = dir * bulletDiceDriftSpeed * dt;
-
-        for (int i = 0; i < spawnedDice.Count; i++)
-        {
-            Rigidbody rb = spawnedDice[i];
-            if (rb == null) continue;
-            rb.position += step;
-        }
-    }
-
-    private void EnterBulletTime()
-    {
-        if (inBulletTime) return;
-        Time.timeScale = Mathf.Clamp(bulletTimeScale, 0.01f, 1f);
-        Time.fixedDeltaTime = bulletTimeFixedDelta;
-    }
-
-    private void ExitBulletTime()
-    {
-        if (!inBulletTime) return;
-        inBulletTime = false;
-
-        Time.timeScale = 1f;
-        Time.fixedDeltaTime = defaultFixedDelta;
-
-        DestroyDiceFillLight();
-    }
-
-    private void HandleDiceClickSmooth()
-    {
-        if (cam == null) return;
-        if (Mouse.current == null) return;
-        if (!Mouse.current.leftButton.wasPressedThisFrame) return;
-
-        Ray ray = (camComp != null)
-            ? camComp.ScreenPointToRay(Mouse.current.position.ReadValue())
-            : new Ray(cam.position, cam.forward);
-
-        if (Physics.Raycast(ray, out RaycastHit hit, 200f, diceRaycastMask, QueryTriggerInteraction.Ignore))
-        {
-            DieController dc = hit.collider.GetComponentInParent<DieController>();
-            if (dc != null)
-            {
-                dc.RandomizeFaceSmooth(diceRotateDuration); // ✅ 平滑换点数
-            }
-        }
-    }
-
-    private IEnumerator DisableCollisionTemporarily(Rigidbody rb, float seconds)
-    {
-        if (rb == null) yield break;
-
-        Collider[] cols = rb.GetComponentsInChildren<Collider>(true);
-        for (int i = 0; i < cols.Length; i++)
-            if (cols[i] != null) cols[i].enabled = false;
-
-        yield return new WaitForSeconds(seconds);
-
-        for (int i = 0; i < cols.Length; i++)
-            if (cols[i] != null) cols[i].enabled = true;
-    }
-
-    // =========================
-    // Auto Point Light Helpers (near camera)
-    // =========================
-    private Vector3 GetFillLightPosNearCamera()
-    {
-        Vector3 center = GetDiceCenterWorld();
-        if (cam == null) return center + Vector3.up * fillLightUp;
-
-        Vector3 toCam = cam.position - center;
-        if (toCam.sqrMagnitude < 0.000001f) toCam = -cam.forward;
-        toCam.Normalize();
-
-        return center + toCam * fillLightForwardToCamera + Vector3.up * fillLightUp;
-    }
-
-    private void EnsureDiceFillLight()
-    {
-        if (!autoSpawnDiceFillLight) return;
-        if (runtimeDiceFillLight != null) return;
-
-        GameObject go = new GameObject("DiceFillPointLight_Runtime");
-        runtimeDiceFillLight = go.AddComponent<Light>();
-
-        runtimeDiceFillLight.type = LightType.Point;
-        runtimeDiceFillLight.color = fillLightColor;
-        runtimeDiceFillLight.range = fillLightRange;
-        runtimeDiceFillLight.intensity = fillLightIntensity;
-        runtimeDiceFillLight.shadows = fillLightShadows ? LightShadows.Soft : LightShadows.None;
-
-        go.transform.position = GetFillLightPosNearCamera();
-    }
-
-    private void UpdateDiceFillLightPosition()
-    {
-        if (runtimeDiceFillLight == null) return;
-        runtimeDiceFillLight.transform.position = GetFillLightPosNearCamera();
-    }
-
-    private Vector3 GetDiceCenterWorld()
-    {
-        Vector3 sum = Vector3.zero;
-        int count = 0;
-
-        for (int i = 0; i < spawnedDice.Count; i++)
-        {
-            Rigidbody rb = spawnedDice[i];
-            if (rb == null) continue;
-            sum += rb.position;
-            count++;
-        }
-
-        if (count == 0)
-        {
-            if (cam != null) return cam.position + cam.forward * diceHoldDistance;
-            return Vector3.zero;
-        }
-
-        return sum / count;
-    }
-
-    private void DestroyDiceFillLight()
-    {
-        if (runtimeDiceFillLight == null) return;
-        Destroy(runtimeDiceFillLight.gameObject);
-        runtimeDiceFillLight = null;
-    }
-
     // =========================
     // Burst FX + Break Apart
     // =========================
@@ -668,9 +480,7 @@ public class StartUIController : MonoBehaviour
         if (fullEnergyBurstPrefab == null) return;
 
         Vector3 pos = (cupBottomGroupTr != null) ? cupBottomGroupTr.position : groupBasePos;
-        Quaternion rot = Quaternion.identity;
-
-        GameObject fx = Instantiate(fullEnergyBurstPrefab, pos, rot);
+        GameObject fx = Instantiate(fullEnergyBurstPrefab, pos, Quaternion.identity);
 
         ParticleSystem ps = fx.GetComponentInChildren<ParticleSystem>();
         if (ps == null)
@@ -686,12 +496,24 @@ public class StartUIController : MonoBehaviour
         var main = ps.main;
         float maxLife = main.startLifetime.constantMax;
         float destroyTime = main.duration + maxLife + fullEnergyBurstDestroyExtra;
-
         Destroy(fx, Mathf.Max(0.5f, destroyTime));
+    }
+
+    private void ClearSpawnedDice()
+    {
+        for (int i = spawnedDice.Count - 1; i >= 0; i--)
+        {
+            Rigidbody rb = spawnedDice[i];
+            if (rb == null) continue;
+            if (rb.gameObject != null) Destroy(rb.gameObject);
+        }
+        spawnedDice.Clear();
     }
 
     private void BreakApartGroupAndLaunch()
     {
+        ClearSpawnedDice();
+
         if (cupBottomGroupTr == null) return;
 
         Vector3 origin = cupBottomGroupTr.position;
@@ -704,6 +526,8 @@ public class StartUIController : MonoBehaviour
 
         LaunchOne(cupTr, origin);
         LaunchOne(bottomTr, origin);
+
+        SpawnAndFlyPostDice();
     }
 
     private void LaunchOne(Transform tr, Vector3 origin)
@@ -726,11 +550,387 @@ public class StartUIController : MonoBehaviour
         rb.AddTorque(Random.onUnitSphere * breakupRandomTorque, ForceMode.Impulse);
     }
 
-    private float EaseOutBack(float x)
+    // =========================
+    // Random offsets with separation
+    // =========================
+    private List<Vector2> SampleOffsetsWithSeparation(int count, float radius, float minSep, int attemptsPerDie)
     {
-        const float c1 = 1.70158f;
-        const float c3 = c1 + 1f;
-        return 1f + c3 * Mathf.Pow(x - 1f, 3f) + c1 * Mathf.Pow(x - 1f, 2f);
+        List<Vector2> pts = new List<Vector2>(count);
+
+        float minSepSqr = minSep * minSep;
+        int hardAttempts = Mathf.Max(4, attemptsPerDie);
+
+        for (int i = 0; i < count; i++)
+        {
+            Vector2 best = Vector2.zero;
+            float bestScore = -1f;
+            bool found = false;
+
+            for (int a = 0; a < hardAttempts; a++)
+            {
+                Vector2 cand = Random.insideUnitCircle * radius;
+
+                bool ok = true;
+                float nearestSqr = float.MaxValue;
+
+                for (int j = 0; j < pts.Count; j++)
+                {
+                    float ds = (cand - pts[j]).sqrMagnitude;
+                    nearestSqr = Mathf.Min(nearestSqr, ds);
+                    if (ds < minSepSqr) { ok = false; break; }
+                }
+
+                if (ok)
+                {
+                    best = cand;
+                    found = true;
+                    break;
+                }
+
+                if (nearestSqr > bestScore)
+                {
+                    bestScore = nearestSqr;
+                    best = cand;
+                }
+            }
+
+            pts.Add(best);
+        }
+
+        return pts;
+    }
+
+    // =========================
+    // Post Dice spawn (random & separated) + light spawn
+    // =========================
+    private void SpawnAndFlyPostDice()
+    {
+        if (!spawnDiceAfterLaunch) return;
+        if (dicePrefab == null) return;
+        if (cam == null) return;
+
+        ClearPostDiceImmediate();
+
+        slowMoArmed = true;
+        slowMoTriggered = false;
+        slowEnergy = 0f;
+        HideSlowEnergyBarImmediate();
+
+        Vector3 baseCenter = cam.position + cam.forward * postDiceSpawnForwardDistance;
+
+        List<Vector2> offsets = SampleOffsetsWithSeparation(
+            5,
+            postSpawnRadius,
+            postMinSeparation,
+            postSampleAttemptsPerDie
+        );
+
+        for (int i = 0; i < 5; i++)
+        {
+            Vector2 off = offsets[i];
+            float depthOff = Random.Range(-postDepthJitter, postDepthJitter);
+
+            Vector3 spawnPos =
+                baseCenter +
+                cam.right * off.x +
+                cam.up * off.y +
+                cam.forward * depthOff;
+
+            GameObject go = Instantiate(dicePrefab, spawnPos, Quaternion.identity);
+
+            Rigidbody rb = go.GetComponent<Rigidbody>();
+            if (rb == null) rb = go.AddComponent<Rigidbody>();
+            rb.isKinematic = true;
+            rb.useGravity = false;
+
+            PostDie d = new PostDie
+            {
+                tr = go.transform,
+                value = Random.Range(1, 7),
+                rollSpeed = Random.Range(postDiceRollMinDegPerSec, postDiceRollMaxDegPerSec),
+                rollAngle = Random.Range(0f, 360f),
+                startPos = spawnPos,
+                planeOffset = off,
+                depthOffset = depthOff
+            };
+
+            postDice.Add(d);
+        }
+
+        // ✅ 生成弱光并立即定位一次
+        EnsurePostDiceFillLight();
+        UpdatePostDiceFillLight();
+
+        postDiceCo = StartCoroutine(Co_FlyPostDiceThroughCamera_Dynamic_SlowEnergy());
+    }
+
+    private IEnumerator Co_FlyPostDiceThroughCamera_Dynamic_SlowEnergy()
+    {
+        float dur = Mathf.Max(0.0001f, postDiceFlyDuration);
+        float half = dur * 0.5f;
+
+        float p1 = 0f;
+        float p2 = 0f;
+
+        List<Vector3> seg2Start = new List<Vector3>(postDice.Count);
+
+        // 第一段：到镜头前
+        while (p1 < 1f)
+        {
+            TryTriggerSlowMoByDistance();
+
+            float speedMul = slowMoTriggered ? Mathf.Clamp01(slowMoSpeedMultiplier) : 1f;
+            float dt = Time.deltaTime * speedMul;
+
+            p1 += dt / Mathf.Max(0.0001f, half);
+            float u = Mathf.Clamp01(p1);
+            float s = u * u * (3f - 2f * u);
+
+            Vector3 centerA = cam.position + cam.forward * postDiceApproachDistance;
+
+            for (int i = 0; i < postDice.Count; i++)
+            {
+                var d = postDice[i];
+                if (d == null || d.tr == null) continue;
+
+                Vector3 targetPos =
+                    centerA +
+                    cam.right * (d.planeOffset.x * 0.35f) +
+                    cam.up * (d.planeOffset.y * 0.35f);
+
+                d.tr.position = Vector3.Lerp(d.startPos, targetPos, s);
+                d.rollAngle += d.rollSpeed * dt;
+            }
+
+            yield return null;
+        }
+
+        // 第二段起点
+        seg2Start.Clear();
+        for (int i = 0; i < postDice.Count; i++)
+        {
+            var d = postDice[i];
+            seg2Start.Add(d != null && d.tr != null ? d.tr.position : Vector3.zero);
+        }
+
+        // 第二段：穿过镜头到镜头后
+        while (p2 < 1f)
+        {
+            TryTriggerSlowMoByDistance();
+
+            float speedMul = slowMoTriggered ? Mathf.Clamp01(slowMoSpeedMultiplier) : 1f;
+            float dt = Time.deltaTime * speedMul;
+
+            p2 += dt / Mathf.Max(0.0001f, half);
+            float u = Mathf.Clamp01(p2);
+            float s = u * u * (3f - 2f * u);
+
+            Vector3 centerB = cam.position - cam.forward * postDiceOvershootBehindCameraDistance;
+
+            for (int i = 0; i < postDice.Count; i++)
+            {
+                var d = postDice[i];
+                if (d == null || d.tr == null) continue;
+
+                Vector3 endPos =
+                    centerB +
+                    cam.right * (d.planeOffset.x * 0.35f) +
+                    cam.up * (d.planeOffset.y * 0.35f);
+
+                d.tr.position = Vector3.Lerp(seg2Start[i], endPos, s);
+                d.rollAngle += d.rollSpeed * dt;
+            }
+
+            yield return null;
+        }
+
+        if (postDiceDestroyAfterArrive > 0.01f)
+        {
+            yield return new WaitForSeconds(postDiceDestroyAfterArrive);
+            ClearPostDiceImmediate();
+        }
+
+        postDiceCo = null;
+    }
+
+    private void TryTriggerSlowMoByDistance()
+    {
+        if (!slowMoArmed || slowMoTriggered) return;
+        if (cam == null) return;
+        if (postDice.Count == 0) return;
+
+        Vector3 center = GetPostDiceCenter(out int count);
+        if (count == 0) return;
+
+        float dist = Vector3.Distance(center, cam.position);
+        if (dist <= slowMoTriggerDistance)
+        {
+            slowMoTriggered = true;
+            slowEnergy = slowEnergyMax;
+
+            FadeInSlowEnergyBarWhole();
+            SetSlowEnergyUI(slowEnergy);
+
+            if (useGlobalSlowMo)
+            {
+                Time.timeScale = Mathf.Clamp(globalSlowMoTimeScale, 0.01f, 1f);
+                if (scaleFixedDeltaTimeWithTimeScale)
+                    Time.fixedDeltaTime = defaultFixedDeltaTime * Time.timeScale;
+            }
+        }
+    }
+
+    private void UpdateSlowEnergyTickAndUI()
+    {
+        if (!slowMoTriggered) return;
+
+        slowEnergy = Mathf.Max(0f, slowEnergy - slowEnergyDecayPerSecond * Time.unscaledDeltaTime);
+        SetSlowEnergyUI(slowEnergy);
+
+        if (slowEnergy <= 0.0001f)
+        {
+            EndSlowMo(forceRestoreTimeScale: false);
+        }
+    }
+
+    private void EndSlowMo(bool forceRestoreTimeScale)
+    {
+        if (!slowMoTriggered && !forceRestoreTimeScale) return;
+
+        slowMoTriggered = false;
+        slowMoArmed = false;
+
+        FadeOutSlowEnergyBarWhole();
+
+        if (useGlobalSlowMo || forceRestoreTimeScale)
+        {
+            Time.timeScale = 1f;
+            if (scaleFixedDeltaTimeWithTimeScale)
+                Time.fixedDeltaTime = defaultFixedDeltaTime;
+        }
+    }
+
+    // =========================
+    // Post Dice Face-to-camera
+    // =========================
+    private void UpdatePostDiceFaceToCamera()
+    {
+        if (cam == null) return;
+        if (postDice.Count == 0) return;
+
+        Vector3 camUp = cam.up;
+
+        for (int i = 0; i < postDice.Count; i++)
+        {
+            var d = postDice[i];
+            if (d == null || d.tr == null) continue;
+
+            Vector3 dirToCam = (cam.position - d.tr.position);
+            if (dirToCam.sqrMagnitude < 0.000001f) dirToCam = cam.forward;
+            dirToCam.Normalize();
+
+            Quaternion look = Quaternion.LookRotation(dirToCam, camUp);
+            Quaternion faceOffset = GetFaceOffsetToForward(d.value);
+            Quaternion roll = Quaternion.AngleAxis(d.rollAngle, Vector3.forward);
+
+            d.tr.rotation = look * roll * faceOffset;
+        }
+    }
+
+    // =========================
+    // Post Dice Fill Light helpers
+    // =========================
+    private void EnsurePostDiceFillLight()
+    {
+        if (!enablePostDiceFillLight) return;
+        if (postDiceFillLight != null) return;
+
+        GameObject go = new GameObject("PostDiceFillPointLight_Runtime");
+        postDiceFillLight = go.AddComponent<Light>();
+        postDiceFillLight.type = LightType.Point;
+        postDiceFillLight.color = postDiceLightColor;
+        postDiceFillLight.range = postDiceLightRange;
+        postDiceFillLight.intensity = postDiceLightIntensity;
+        postDiceFillLight.shadows = postDiceLightShadows ? LightShadows.Soft : LightShadows.None;
+    }
+
+    private Vector3 GetPostDiceCenter(out int count)
+    {
+        Vector3 sum = Vector3.zero;
+        count = 0;
+        for (int i = 0; i < postDice.Count; i++)
+        {
+            var d = postDice[i];
+            if (d == null || d.tr == null) continue;
+            sum += d.tr.position;
+            count++;
+        }
+        if (count == 0) return Vector3.zero;
+        return sum / count;
+    }
+
+    private void UpdatePostDiceFillLight()
+    {
+        if (postDiceFillLight == null) return;
+        if (cam == null) return;
+        if (postDice == null || postDice.Count == 0) return;
+
+        Vector3 center = GetPostDiceCenter(out int count);
+        if (count == 0) return;
+
+        Vector3 toCam = (cam.position - center);
+        if (toCam.sqrMagnitude < 0.000001f) toCam = -cam.forward;
+        toCam.Normalize();
+
+        Vector3 lightPos = center + toCam * postDiceLightForwardToCamera + cam.up * postDiceLightUpOffset;
+        postDiceFillLight.transform.position = lightPos;
+    }
+
+    private void DestroyPostDiceFillLight()
+    {
+        if (postDiceFillLight == null) return;
+        Destroy(postDiceFillLight.gameObject);
+        postDiceFillLight = null;
+    }
+
+    private void ClearPostDiceImmediate()
+    {
+        if (postDiceCo != null)
+        {
+            StopCoroutine(postDiceCo);
+            postDiceCo = null;
+        }
+
+        for (int i = postDice.Count - 1; i >= 0; i--)
+        {
+            var d = postDice[i];
+            if (d != null && d.tr != null)
+                Destroy(d.tr.gameObject);
+        }
+        postDice.Clear();
+
+        EndSlowMo(forceRestoreTimeScale: true);
+        DestroyPostDiceFillLight();
+    }
+
+    /// <summary>
+    /// 将“某个点数的面”对齐到 local +Z（forward）
+    /// 假设模型：+Z=1, +X=2, -Z=3, -X=4, +Y=5, -Y=6
+    /// 如果你的模型不一致，就改这里的表
+    /// </summary>
+    private Quaternion GetFaceOffsetToForward(int value)
+    {
+        value = Mathf.Clamp(value, 1, 6);
+        switch (value)
+        {
+            case 1: return Quaternion.Euler(0f, 0f, 0f);
+            case 2: return Quaternion.Euler(0f, -90f, 0f);
+            case 3: return Quaternion.Euler(0f, 180f, 0f);
+            case 4: return Quaternion.Euler(0f, 90f, 0f);
+            case 5: return Quaternion.Euler(90f, 0f, 0f);
+            case 6: return Quaternion.Euler(-90f, 0f, 0f);
+        }
+        return Quaternion.identity;
     }
 
     // =========================
@@ -1041,7 +1241,7 @@ public class StartUIController : MonoBehaviour
     }
 
     // =========================
-    // Energy UI (no CanvasGroup)
+    // Energy UI (原有)
     // =========================
     private void CacheEnergyGraphics()
     {
@@ -1067,9 +1267,7 @@ public class StartUIController : MonoBehaviour
         cameraDriveEnabled = true;
 
         spawnedDice.Clear();
-
-        ExitBulletTime();
-        DestroyDiceFillLight();
+        ClearPostDiceImmediate();
 
         SetEnergyUI(0f);
     }
@@ -1077,7 +1275,6 @@ public class StartUIController : MonoBehaviour
     private void FadeInEnergyBarWhole()
     {
         if (energyBarRoot == null) return;
-
         if (energyGraphics.Count == 0) CacheEnergyGraphics();
 
         if (!energyBarRoot.activeSelf)
@@ -1095,7 +1292,6 @@ public class StartUIController : MonoBehaviour
     private void FadeOutEnergyBarWhole()
     {
         if (energyBarRoot == null) return;
-
         if (energyGraphics.Count == 0) CacheEnergyGraphics();
 
         if (!energyBarRoot.activeSelf)
@@ -1115,10 +1311,7 @@ public class StartUIController : MonoBehaviour
         {
             var g = energyGraphics[i];
             if (g == null) continue;
-
-            Color c = g.color;
-            c.a = a;
-            g.color = c;
+            Color c = g.color; c.a = a; g.color = c;
         }
     }
 
@@ -1159,7 +1352,6 @@ public class StartUIController : MonoBehaviour
     private void SetEnergyUI(float energyValue)
     {
         float norm = Mathf.Clamp01(energyValue / 100f);
-
         if (energyFillImage != null)
         {
             energyFillImage.fillAmount = norm;
@@ -1168,5 +1360,100 @@ public class StartUIController : MonoBehaviour
             if (keepAlphaDrivenByFade) c.a = energyFillImage.color.a;
             energyFillImage.color = c;
         }
+    }
+
+    // =========================
+    // SlowEnergy UI (渐显/渐隐 + fillAmount)
+    // =========================
+    private void CacheSlowEnergyGraphics()
+    {
+        slowEnergyGraphics.Clear();
+        if (slowEnergyBarRoot == null) return;
+        slowEnergyBarRoot.GetComponentsInChildren(true, slowEnergyGraphics);
+    }
+
+    private void HideSlowEnergyBarImmediate()
+    {
+        if (slowEnergyBarRoot != null) slowEnergyBarRoot.SetActive(false);
+        slowEnergyAlpha = 0f;
+        slowEnergyBarVisible = false;
+        SetSlowEnergyGraphicsAlpha(0f);
+    }
+
+    private void FadeInSlowEnergyBarWhole()
+    {
+        if (slowEnergyBarRoot == null) return;
+        if (slowEnergyGraphics.Count == 0) CacheSlowEnergyGraphics();
+
+        if (!slowEnergyBarRoot.activeSelf)
+            slowEnergyBarRoot.SetActive(true);
+
+        if (slowEnergyFadeCo != null) StopCoroutine(slowEnergyFadeCo);
+
+        SetSlowEnergyGraphicsAlpha(slowEnergyAlpha);
+        slowEnergyFadeCo = StartCoroutine(FadeSlowEnergyGraphicsTo(1f, slowEnergyFadeInDuration));
+        slowEnergyBarVisible = true;
+    }
+
+    private void FadeOutSlowEnergyBarWhole()
+    {
+        if (slowEnergyBarRoot == null) return;
+        if (slowEnergyGraphics.Count == 0) CacheSlowEnergyGraphics();
+
+        if (!slowEnergyBarRoot.activeSelf)
+            slowEnergyBarRoot.SetActive(true);
+
+        if (slowEnergyFadeCo != null) StopCoroutine(slowEnergyFadeCo);
+
+        SetSlowEnergyGraphicsAlpha(slowEnergyAlpha);
+        slowEnergyFadeCo = StartCoroutine(FadeSlowEnergyGraphicsTo(0f, slowEnergyFadeOutDuration));
+    }
+
+    private void SetSlowEnergyGraphicsAlpha(float a)
+    {
+        for (int i = 0; i < slowEnergyGraphics.Count; i++)
+        {
+            var g = slowEnergyGraphics[i];
+            if (g == null) continue;
+            Color c = g.color; c.a = a; g.color = c;
+        }
+        slowEnergyAlpha = a;
+    }
+
+    private IEnumerator FadeSlowEnergyGraphicsTo(float targetAlpha, float duration)
+    {
+        float from = slowEnergyAlpha;
+
+        if (duration <= 0.0001f)
+        {
+            SetSlowEnergyGraphicsAlpha(targetAlpha);
+            yield break;
+        }
+
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.unscaledDeltaTime;
+            float u = Mathf.Clamp01(t / duration);
+            float s = u * u * (3f - 2f * u);
+            float a = Mathf.Lerp(from, targetAlpha, s);
+            SetSlowEnergyGraphicsAlpha(a);
+            yield return null;
+        }
+
+        SetSlowEnergyGraphicsAlpha(targetAlpha);
+
+        if (Mathf.Approximately(targetAlpha, 0f))
+        {
+            slowEnergyBarVisible = false;
+            if (slowEnergyBarRoot != null) slowEnergyBarRoot.SetActive(false);
+        }
+    }
+
+    private void SetSlowEnergyUI(float slowEnergyValue)
+    {
+        if (slowEnergyFillImage == null) return;
+        float norm = Mathf.Clamp01(slowEnergyValue / Mathf.Max(0.0001f, slowEnergyMax));
+        slowEnergyFillImage.fillAmount = norm;
     }
 }

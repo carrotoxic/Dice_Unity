@@ -29,13 +29,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8306760033772933496}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: -0, z: -0, w: 1}
+  m_LocalRotation: {x: -0.71964455, y: -0, z: -0, w: 0.6943427}
   m_LocalPosition: {x: 0.963, y: 1.0341, z: 2.336}
   m_LocalScale: {x: 0.05, y: 0.05, z: 0.05}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: -92.05, y: 0, z: 0}
 --- !u!33 &5444199249899622151
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -153,10 +153,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8a5e67980c7c1a245819330c9973f6f0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DieController
-  face1TopRotation: {x: 0, y: 0, z: 0, w: 1}
-  face2TopRotation: {x: 0, y: 0, z: 0, w: 1}
-  face3TopRotation: {x: 0, y: 0, z: 0, w: 1}
-  face4TopRotation: {x: 0, y: 0, z: 0, w: 1}
-  face5TopRotation: {x: 0, y: 0, z: 0, w: 1}
-  face6TopRotation: {x: 0, y: 0, z: 0, w: 1}
+  face1TopEuler: {x: -90, y: 0, z: 0}
+  face2TopEuler: {x: 0, y: 0, z: 0}
+  face3TopEuler: {x: 0, y: 0, z: 270}
+  face4TopEuler: {x: 0, y: 0, z: 90}
+  face5TopEuler: {x: 0, y: 0, z: 180}
+  face6TopEuler: {x: 90, y: 0, z: 0}
   currentValue: 1
