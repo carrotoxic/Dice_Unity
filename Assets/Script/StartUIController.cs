@@ -7,6 +7,32 @@ using UnityEngine.UI;
 public class StartUIController : MonoBehaviour
 {
     // =========================
+    // SFX
+    // =========================
+    [Header("SFX - Dice Drop (Initial Spawn)")]
+    [SerializeField] private AudioClip diceDropSfx;
+    [SerializeField] private float diceDropSfxDelay = 0.2f;
+    [Range(0f, 1f)][SerializeField] private float diceDropSfxVolume = 1f;
+    [SerializeField] private Vector2 diceDropSfxPitchRange = new Vector2(0.95f, 1.05f);
+
+    [Header("SFX - Shake Loop (Energy Bar Stage)")]
+    [SerializeField] private AudioClip shakeLoopSfx;
+    [Tooltip("能量=0 时的音量")]
+    [Range(0f, 1f)][SerializeField] private float shakeMinVolume = 0.05f;
+    [Tooltip("能量=100 时的音量")]
+    [Range(0f, 1f)][SerializeField] private float shakeMaxVolume = 1.0f;
+    [Tooltip("能量=0 时的播放速度(Pitch)")]
+    [SerializeField] private float shakeMinPitch = 0.9f;
+    [Tooltip("能量=100 时的播放速度(Pitch)")]
+    [SerializeField] private float shakeMaxPitch = 1.35f;
+    [Tooltip("音量变化平滑速度（越大越跟手）")]
+    [SerializeField] private float shakeVolumeLerp = 12f;
+    [Tooltip("Pitch 变化平滑速度（越大越跟手）")]
+    [SerializeField] private float shakePitchLerp = 12f;
+    [Tooltip("只在能量条可见时播放（否则：能量>0 也会播放）")]
+    [SerializeField] private bool shakeOnlyWhenEnergyBarVisible = true;
+
+    // =========================
     // Full Energy Burst FX
     // =========================
     [Header("Full Energy Burst FX")]
@@ -80,6 +106,11 @@ public class StartUIController : MonoBehaviour
     [Header("Slow Energy (100 -> 0)")]
     [SerializeField] private float slowEnergyMax = 100f;
     [SerializeField] private float slowEnergyDecayPerSecond = 25f;
+
+    [Header("Slow-Mo Dice Click (Consume SlowEnergy + Smooth Face Change)")]
+    [SerializeField] private float slowEnergyCostPerDiceClick = 12f;
+    [SerializeField] private float faceChangeSmoothSpeed = 10f; // 越大转得越快（用 unscaledDeltaTime）
+    [SerializeField] private bool ensureColliderOnPostDice = true;
 
     // =========================
     // Slow Energy Bar UI (Fade + Filled)
@@ -225,12 +256,23 @@ public class StartUIController : MonoBehaviour
     private class PostDie
     {
         public Transform tr;
+
+        // 点数（逻辑值：用于结算/记录）
         public int value;
+
+        // 旋转（轻微 roll）
         public float rollSpeed;
         public float rollAngle;
+
+        // 飞行路径
         public Vector3 startPos;
         public Vector2 planeOffset;
         public float depthOffset;
+
+        // ✅ 平滑切面（渲染用）
+        public Quaternion faceFrom = Quaternion.identity;
+        public Quaternion faceTo = Quaternion.identity;
+        public float faceT = 1f; // 1=已到达
     }
     private readonly List<PostDie> postDice = new List<PostDie>();
     private Coroutine postDiceCo;
@@ -257,6 +299,12 @@ public class StartUIController : MonoBehaviour
     private float currentEnergyAlpha = 0f;
     private Coroutine energyFadeCo;
     private readonly List<Graphic> energyGraphics = new List<Graphic>();
+
+    // Energy shake loop runtime
+    private AudioSource shakeLoopSource;
+    private float shakeLoopVol = 0f;
+    private float shakeLoopPitch = 1f;
+
 
     // Group + Camera drive
     private Transform cupBottomGroupTr;
@@ -289,12 +337,14 @@ public class StartUIController : MonoBehaviour
         SetSlowEnergyUI(0f);
 
         DestroyPostDiceFillLight();
+        StopShakeLoopImmediate();
     }
 
     private void OnDisable()
     {
         EndSlowMo(forceRestoreTimeScale: true);
         DestroyPostDiceFillLight();
+        StopShakeLoopImmediate();
     }
 
     private void Update()
@@ -305,6 +355,8 @@ public class StartUIController : MonoBehaviour
                 OnSpacePressed();
             return;
         }
+
+        HandlePostDiceClickDuringSlowMo();
 
         if (!energyLogicEnabled) return;
 
@@ -344,9 +396,11 @@ public class StartUIController : MonoBehaviour
 
                 FadeOutEnergyBarWhole();
                 StartCoroutine(FullEnergySequence());
+                StopShakeLoopImmediate();
             }
         }
 
+        UpdateShakeLoop();
         SetEnergyUI(energy);
     }
 
@@ -389,6 +443,129 @@ public class StartUIController : MonoBehaviour
             }
         }
     }
+
+
+    // =========================
+    // Energy Bar Shake Loop SFX
+    // =========================
+    private void EnsureShakeLoopSource()
+    {
+        if (shakeLoopSource != null) return;
+
+        // 用一个 AudioSource 在这个 Controller 上播放循环音
+        shakeLoopSource = gameObject.GetComponent<AudioSource>();
+        if (shakeLoopSource == null) shakeLoopSource = gameObject.AddComponent<AudioSource>();
+
+        shakeLoopSource.playOnAwake = false;
+        shakeLoopSource.loop = true;
+        shakeLoopSource.spatialBlend = 0f; // 2D
+        shakeLoopSource.volume = 0f;
+        shakeLoopSource.pitch = 1f;
+    }
+
+    private void UpdateShakeLoop()
+    {
+        // 只在“能量条阶段”播放：还没进入 full-energy sequence，并且未锁定
+        if (!energyLogicEnabled || energyLocked || fullEnergySequenceStarted)
+        {
+            StopShakeLoopSmooth();
+            return;
+        }
+
+        if (shakeLoopSfx == null)
+        {
+            StopShakeLoopSmooth();
+            return;
+        }
+
+        bool shouldPlay = shakeOnlyWhenEnergyBarVisible ? energyBarVisible : (energyBarVisible || energy > 0.01f);
+
+        if (!shouldPlay)
+        {
+            StopShakeLoopSmooth();
+            return;
+        }
+
+        EnsureShakeLoopSource();
+
+        if (shakeLoopSource.clip != shakeLoopSfx)
+            shakeLoopSource.clip = shakeLoopSfx;
+
+        if (!shakeLoopSource.isPlaying)
+            shakeLoopSource.Play();
+
+        float norm = Mathf.Clamp01(energy / 100f);
+
+        // 能量越高：越大声、越快
+        float targetVol = Mathf.Lerp(shakeMinVolume, shakeMaxVolume, norm);
+        float targetPitch = Mathf.Lerp(shakeMinPitch, shakeMaxPitch, norm);
+
+        float dt = Time.deltaTime;
+        shakeLoopVol = Mathf.Lerp(shakeLoopVol, targetVol, 1f - Mathf.Exp(-shakeVolumeLerp * dt));
+        shakeLoopPitch = Mathf.Lerp(shakeLoopPitch, targetPitch, 1f - Mathf.Exp(-shakePitchLerp * dt));
+
+        shakeLoopSource.volume = shakeLoopVol;
+        shakeLoopSource.pitch = shakeLoopPitch;
+    }
+
+    private void StopShakeLoopSmooth()
+    {
+        if (shakeLoopSource == null) return;
+        if (!shakeLoopSource.isPlaying) return;
+
+        float dt = Time.deltaTime;
+        shakeLoopVol = Mathf.Lerp(shakeLoopVol, 0f, 1f - Mathf.Exp(-shakeVolumeLerp * dt));
+        shakeLoopSource.volume = shakeLoopVol;
+
+        if (shakeLoopVol <= 0.001f)
+        {
+            shakeLoopSource.Stop();
+            shakeLoopSource.volume = 0f;
+            shakeLoopVol = 0f;
+            shakeLoopPitch = 1f;
+        }
+    }
+
+    private void StopShakeLoopImmediate()
+    {
+        if (shakeLoopSource == null) return;
+
+        shakeLoopSource.Stop();
+        shakeLoopSource.volume = 0f;
+        shakeLoopSource.pitch = 1f;
+
+        shakeLoopVol = 0f;
+        shakeLoopPitch = 1f;
+    }
+
+    // =========================
+    // Dice Drop One-Shot SFX
+    // =========================
+    private void PlayDiceDropSfxDelayed(Vector3 worldPos)
+    {
+        if (diceDropSfx == null) return;
+        StartCoroutine(PlayDiceDropSfxDelayedCo(worldPos));
+    }
+
+    private IEnumerator PlayDiceDropSfxDelayedCo(Vector3 worldPos)
+    {
+        if (diceDropSfxDelay > 0f)
+            yield return new WaitForSeconds(diceDropSfxDelay);
+
+        // 用临时 AudioSource 以支持 pitch 随机
+        GameObject go = new GameObject("DiceDropSFX");
+        go.transform.position = worldPos;
+        var src = go.AddComponent<AudioSource>();
+        src.clip = diceDropSfx;
+        src.volume = diceDropSfxVolume;
+        float pitch = Random.Range(diceDropSfxPitchRange.x, diceDropSfxPitchRange.y);
+        src.pitch = pitch;
+        src.spatialBlend = 0f; // 2D（如果你想 3D：改成 1 并设距离）
+        src.Play();
+
+        Destroy(go, diceDropSfx.length / Mathf.Max(0.01f, Mathf.Abs(pitch)) + 0.2f);
+    }
+
 
     // =========================
     // Full Energy Sequence
@@ -638,20 +815,35 @@ public class StartUIController : MonoBehaviour
 
             GameObject go = Instantiate(dicePrefab, spawnPos, Quaternion.identity);
 
+            if (ensureColliderOnPostDice)
+            {
+                // 让 Raycast 可以点到骰子（如果 prefab 本来就有 Collider，这里不会重复加）
+                if (go.GetComponentInChildren<Collider>() == null)
+                {
+                    var col = go.AddComponent<BoxCollider>();
+                    col.isTrigger = false;
+                }
+            }
+
             Rigidbody rb = go.GetComponent<Rigidbody>();
             if (rb == null) rb = go.AddComponent<Rigidbody>();
             rb.isKinematic = true;
             rb.useGravity = false;
 
+            int v = Random.Range(1, 7);
+
             PostDie d = new PostDie
             {
                 tr = go.transform,
-                value = Random.Range(1, 7),
+                value = v,
                 rollSpeed = Random.Range(postDiceRollMinDegPerSec, postDiceRollMaxDegPerSec),
                 rollAngle = Random.Range(0f, 360f),
                 startPos = spawnPos,
                 planeOffset = off,
-                depthOffset = depthOff
+                depthOffset = depthOff,
+                faceFrom = GetFaceOffsetToForward(v),
+                faceTo = GetFaceOffsetToForward(v),
+                faceT = 1f
             };
 
             postDice.Add(d);
@@ -793,6 +985,73 @@ public class StartUIController : MonoBehaviour
         }
     }
 
+
+    // =========================
+    // Slow-Mo Dice Click (Consume energy -> Random value -> Smooth rotate)
+    // =========================
+    private void HandlePostDiceClickDuringSlowMo()
+    {
+        if (!slowMoTriggered) return;
+        if (slowEnergy <= 0.0001f) return;
+        if (cam == null) return;
+        if (postDice == null || postDice.Count == 0) return;
+
+        if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame) return;
+
+        // 用新 InputSystem 读屏幕坐标
+        Vector2 mousePos = Mouse.current.position.ReadValue();
+        Ray ray = cam.GetComponent<Camera>() != null
+            ? cam.GetComponent<Camera>().ScreenPointToRay(mousePos)
+            : new Ray(cam.position, cam.forward);
+
+        if (!Physics.Raycast(ray, out RaycastHit hit, 200f))
+            return;
+
+        // 命中到哪个 postDie？
+        PostDie clicked = null;
+        for (int i = 0; i < postDice.Count; i++)
+        {
+            var d = postDice[i];
+            if (d == null || d.tr == null) continue;
+
+            // collider 可能在子物体上
+            if (hit.collider != null && (hit.collider.transform == d.tr || hit.collider.transform.IsChildOf(d.tr)))
+            {
+                clicked = d;
+                break;
+            }
+        }
+
+        if (clicked == null) return;
+
+        // 能量不足就不执行
+        if (slowEnergy < slowEnergyCostPerDiceClick)
+            return;
+
+        // 消耗能量
+        slowEnergy = Mathf.Max(0f, slowEnergy - slowEnergyCostPerDiceClick);
+        SetSlowEnergyUI(slowEnergy);
+
+        // 随机一个新点数（尽量不同）
+        int newValue = Random.Range(1, 7);
+        if (newValue == clicked.value)
+            newValue = (newValue % 6) + 1;
+
+        clicked.value = newValue;
+
+        // ✅ 平滑转向：从“当前渲染中的面朝向” -> “新点数对应的面朝向”
+        // 重要：faceOffset 是在 look 的局部空间里用的，所以这里存的是 “切面偏移” 本身
+        // 我们用当前插值结果作为 from，确保连续
+        float t = clicked.faceT;
+        float s = t * t * (3f - 2f * t);
+        Quaternion currentFace = Quaternion.Slerp(clicked.faceFrom, clicked.faceTo, s);
+
+        clicked.faceFrom = currentFace;
+        clicked.faceTo = GetFaceOffsetToForward(newValue);
+        clicked.faceT = 0f;
+    }
+
+
     private void EndSlowMo(bool forceRestoreTimeScale)
     {
         if (!slowMoTriggered && !forceRestoreTimeScale) return;
@@ -830,7 +1089,18 @@ public class StartUIController : MonoBehaviour
             dirToCam.Normalize();
 
             Quaternion look = Quaternion.LookRotation(dirToCam, camUp);
-            Quaternion faceOffset = GetFaceOffsetToForward(d.value);
+
+            // ✅ 平滑切换点数对应的面朝向（只影响 faceOffset，不破坏“直面镜头”）
+            if (d.faceT < 1f)
+            {
+                float dt = Time.unscaledDeltaTime;
+                d.faceT = Mathf.Clamp01(d.faceT + dt * Mathf.Max(0.01f, faceChangeSmoothSpeed));
+            }
+            float t = d.faceT;
+            // SmoothStep 手感更柔和
+            float s = t * t * (3f - 2f * t);
+            Quaternion faceOffset = Quaternion.Slerp(d.faceFrom, d.faceTo, s);
+
             Quaternion roll = Quaternion.AngleAxis(d.rollAngle, Vector3.forward);
 
             d.tr.rotation = look * roll * faceOffset;
@@ -1099,6 +1369,8 @@ public class StartUIController : MonoBehaviour
     {
         Vector3 pos = new Vector3(spawnCenter.x, spawnCenter.y + diceSpawnHeight, spawnCenter.z);
         GameObject d = Instantiate(dicePrefab, pos, Quaternion.identity);
+
+        PlayDiceDropSfxDelayed(pos);
 
         if (d.GetComponent<Collider>() == null)
             d.AddComponent<BoxCollider>();
