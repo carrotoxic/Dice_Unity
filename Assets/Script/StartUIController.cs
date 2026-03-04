@@ -15,6 +15,10 @@ public class StartUIController : MonoBehaviour
     [Range(0f, 1f)][SerializeField] private float diceDropSfxVolume = 1f;
     [SerializeField] private Vector2 diceDropSfxPitchRange = new Vector2(0.95f, 1.05f);
 
+    [Header("SFX - Bottom Drop (Initial Bottom)")]
+    [Tooltip("Bottom 落下/落地时的音效（与骰子 drop 音效分开）")]
+    [SerializeField] private AudioClip bottomDropSfx;
+
     [Header("SFX - Shake Loop (Energy Bar Stage)")]
     [SerializeField] private AudioClip shakeLoopSfx;
     [Tooltip("能量=0 时的音量")]
@@ -547,6 +551,12 @@ public class StartUIController : MonoBehaviour
         StartCoroutine(PlayDiceDropSfxDelayedCo(worldPos));
     }
 
+    private void PlayBottomDropSfxDelayed(Vector3 worldPos)
+    {
+        if (bottomDropSfx == null) return;
+        StartCoroutine(PlayBottomDropSfxDelayedCo(worldPos));
+    }
+
     private IEnumerator PlayDiceDropSfxDelayedCo(Vector3 worldPos)
     {
         if (diceDropSfxDelay > 0f)
@@ -564,6 +574,24 @@ public class StartUIController : MonoBehaviour
         src.Play();
 
         Destroy(go, diceDropSfx.length / Mathf.Max(0.01f, Mathf.Abs(pitch)) + 0.2f);
+    }
+
+    private IEnumerator PlayBottomDropSfxDelayedCo(Vector3 worldPos)
+    {
+        if (diceDropSfxDelay > 0f)
+            yield return new WaitForSeconds(diceDropSfxDelay);
+
+        GameObject go = new GameObject("BottomDropSFX");
+        go.transform.position = worldPos;
+        var src = go.AddComponent<AudioSource>();
+        src.clip = bottomDropSfx;
+        src.volume = diceDropSfxVolume;
+        float pitch = Random.Range(diceDropSfxPitchRange.x, diceDropSfxPitchRange.y);
+        src.pitch = pitch;
+        src.spatialBlend = 0f; // 2D（想做 3D 改成 1）
+        src.Play();
+
+        Destroy(go, bottomDropSfx.length / Mathf.Max(0.01f, Mathf.Abs(pitch)) + 0.2f);
     }
 
 
@@ -1263,6 +1291,9 @@ public class StartUIController : MonoBehaviour
         GameObject obj = Instantiate(bottomPrefab, bottomSpawnPos, rot);
 
         bottomTr = obj.transform;
+
+        // ✅ First bottom drop SFX (delayed)
+        PlayBottomDropSfxDelayed(bottomTr.position);
 
         if (obj.GetComponent<Collider>() == null)
             obj.AddComponent<BoxCollider>();

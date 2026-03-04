@@ -990,6 +990,135 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 4811614025567490, guid: 9d3ad311ad9df5d4a8b8497ace77af70, type: 3}
   m_PrefabInstance: {fileID: 27035178}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &344548708
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 344548710}
+  - component: {fileID: 344548709}
+  m_Layer: 0
+  m_Name: Music_Suspenseful
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!82 &344548709
+AudioSource:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 344548708}
+  m_Enabled: 1
+  serializedVersion: 4
+  OutputAudioMixerGroup: {fileID: 0}
+  m_audioClip: {fileID: 0}
+  m_Resource: {fileID: 8300000, guid: 2e82ca7b47ede46d486139d8d9c9059d, type: 3}
+  m_PlayOnAwake: 1
+  m_Volume: 0.055
+  m_Pitch: 1
+  Loop: 0
+  Mute: 0
+  Spatialize: 0
+  SpatializePostEffects: 0
+  Priority: 128
+  DopplerLevel: 1
+  MinDistance: 1
+  MaxDistance: 500
+  Pan2D: 0
+  rolloffMode: 0
+  BypassEffects: 0
+  BypassListenerEffects: 0
+  BypassReverbZones: 0
+  rolloffCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  panLevelCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  spreadCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  reverbZoneMixCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+--- !u!4 &344548710
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 344548708}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -2.30119, y: 3.11322, z: 3.16316}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &425456411
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1883,6 +2012,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6025515158e31dd41b45930859ba026f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StartUIController
+  diceDropSfx: {fileID: 8300000, guid: 256aaf45b3376634b99a0dd282602e1c, type: 3}
+  diceDropSfxDelay: 0.2
+  diceDropSfxVolume: 1
+  diceDropSfxPitchRange: {x: 0.95, y: 1.05}
+  bottomDropSfx: {fileID: 8300000, guid: 635c90a152f10bd4bb5f001800f8a15f, type: 3}
+  shakeLoopSfx: {fileID: 8300000, guid: 10ee0110778f4a24cb5e559b47204e17, type: 3}
+  shakeMinVolume: 0.05
+  shakeMaxVolume: 1
+  shakeMinPitch: 0.9
+  shakeMaxPitch: 1.35
+  shakeVolumeLerp: 12
+  shakePitchLerp: 12
+  shakeOnlyWhenEnergyBarVisible: 1
   fullEnergyBurstPrefab: {fileID: 992277838493781689, guid: 4b3954849eb9c7043a586326f908377d, type: 3}
   fullEnergyBurstCount: 150
   fullEnergyBurstDestroyExtra: 0.5
@@ -1904,6 +2046,13 @@ MonoBehaviour:
   postMinSeparation: 0.55
   postDepthJitter: 0.8
   postSampleAttemptsPerDie: 24
+  enablePostDiceFillLight: 1
+  postDiceLightColor: {r: 1, g: 0.95, b: 0.85, a: 1}
+  postDiceLightRange: 6
+  postDiceLightIntensity: 0.7
+  postDiceLightForwardToCamera: 0.8
+  postDiceLightUpOffset: 0.2
+  postDiceLightShadows: 0
   slowMoTriggerDistance: 2
   slowMoSpeedMultiplier: 0.25
   useGlobalSlowMo: 1
@@ -1911,6 +2060,9 @@ MonoBehaviour:
   scaleFixedDeltaTimeWithTimeScale: 1
   slowEnergyMax: 100
   slowEnergyDecayPerSecond: 10
+  slowEnergyCostPerDiceClick: 12
+  faceChangeSmoothSpeed: 10
+  ensureColliderOnPostDice: 1
   slowEnergyBarRoot: {fileID: 2136139800}
   slowEnergyFillImage: {fileID: 328441396}
   slowEnergyFadeInDuration: 0.35
@@ -5160,3 +5312,4 @@ SceneRoots:
   - {fileID: 20014523}
   - {fileID: 879067462}
   - {fileID: 774724709}
+  - {fileID: 344548710}
